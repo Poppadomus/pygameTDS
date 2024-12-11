@@ -61,8 +61,6 @@ constants.update({
 })
 
 
-pygame.init()
-
 class EnergyOrb(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
@@ -75,6 +73,7 @@ class EnergyOrb(pygame.sprite.Sprite):
         if pygame.time.get_ticks() - self.spawn_time > self.lifetime:
             self.kill()
 
+
 class Chest(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
@@ -85,6 +84,644 @@ class Chest(pygame.sprite.Sprite):
     def open(self):
         self.opened = True
         self.kill()
+
+
+class Weapon:
+    def __init__(self, name, projectile_speed, fire_rate, damage, spread_angle, ammo, reload_time, penetration, locked,  blast_radius=0):
+        self.name = name
+        self.projectile_speed = projectile_speed
+        self.fire_rate = fire_rate
+        self.damage = damage
+        self.spread_angle = spread_angle
+        self.ammo = ammo
+        self.max_ammo = ammo
+        self.reload_time = reload_time
+        self.penetration = penetration
+        self.locked = locked
+        self.blast_radius = blast_radius
+
+
+class WeaponCategory:
+    def __init__(self, name, weapons):
+        self.name = name
+        self.weapons = weapons
+        self.current_index = self.find_first_unlocked_weapon()
+
+    def find_first_unlocked_weapon(self):
+        for i, weapon in enumerate(self.weapons):
+            if not weapon.locked:
+                return i
+        return None
+
+    def current_weapon(self):
+        if self.current_index is not None:
+            return self.weapons[self.current_index]
+        return None
+
+    def next_weapon(self):
+        if self.current_index is None:
+            return
+        start_index = self.current_index
+        while True:
+            self.current_index = (self.current_index + 1) % len(self.weapons)
+            if not self.weapons[self.current_index].locked:
+                return
+            if self.current_index == start_index:
+                return
+
+    def previous_weapon(self):
+        if self.current_index is None:
+            return
+        start_index = self.current_index
+        while True:
+            self.current_index = (self.current_index - 1) % len(self.weapons)
+            if not self.weapons[self.current_index].locked:
+                return
+            if self.current_index == start_index:
+                return
+    def has_unlocked_weapon(self):
+        return any(not weapon.locked for weapon in self.weapons)
+
+
+class Camera:
+    def __init__(self, width, height):
+        self.rect = pygame.Rect(0, 0, width, height)
+        self.width = width
+        self.height = height
+
+    def apply(self, entity):
+        if isinstance(entity, pygame.Rect):
+            return entity.move(self.rect.topleft)
+        return entity.rect.move(self.rect.topleft)
+
+    def update(self, target):
+        x = -target.rect.centerx + int(constants['WIDTH'] / 2)
+        y = -target.rect.centery + int(constants['HEIGHT'] / 2)
+
+        x = min(0, x)
+        y = min(0, y)
+        x = max(-(constants['VIRTUAL_WIDTH'] - constants['WIDTH']), x)
+        y = max(-(constants['VIRTUAL_HEIGHT'] - constants['HEIGHT']), y)
+
+        self.rect.topleft = (x, y)
+
+
+class MuzzleFlash(pygame.sprite.Sprite):
+    def __init__(self, pos, angle):
+        super().__init__()
+        self.original_image = pygame.Surface((10, 10), pygame.SRCALPHA)
+
+        base_red = random.randint(220, 255)
+        base_green = random.randint(100, 180)
+        base_blue = random.randint(0, 50)
+        pygame.draw.circle(self.original_image, (base_red, base_green, base_blue, 230),
+                           (10, 10), 6)
+
+        pygame.draw.circle(self.original_image,
+                           (base_red, base_green + 20, base_blue, 180), (20, 10), 9)
+        pygame.draw.circle(self.original_image, (
+        min(base_red + 20, 255), min(base_green + 40, 255), min(base_blue + 20, 255),
+        130), (30, 10), 12)
+
+        self.image = pygame.transform.rotate(self.original_image, math.degrees(-angle))
+        self.rect = self.image.get_rect(center=pos)
+        self.spawn_time = pygame.time.get_ticks()
+        self.lifetime = random.randint(1, 4)
+
+    def update(self):
+        if pygame.time.get_ticks() - self.spawn_time > self.lifetime:
+            self.kill()
+
+        self.weapon_categories = weapon_categories
+        self.current_category_index = self.find_first_category_with_unlocked_weapon()
+        self.current_weapon = self.get_current_weapon()
+
+    def find_first_category_with_unlocked_weapon(self):
+        for i, category in enumerate(self.weapon_categories):
+            if category.has_unlocked_weapon():
+                return i
+        return 0
+
+    def get_current_weapon(self):
+        category = self.weapon_categories[self.current_category_index]
+        return category.current_weapon()
+
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.original_image = player_image
+        self.image = self.original_image
+        self.rect = self.image.get_rect(center=(x, y))
+        self.mask = player_mask
+        self.speed = constants['PLAYER_SPEED']
+        self.health = constants['PLAYER_HEALTH']
+        self.shake_offset = (1, 1)
+        self.shake_duration = 0.0
+        self.shake_intensity = 0
+        self.weapon_categories = weapon_categories
+        self.current_category_index = 0
+        self.set_initial_weapon()
+
+    def set_initial_weapon(self):
+        first_pistol = self.weapon_categories[0].weapons[0]
+        first_pistol.locked = False
+        for category in self.weapon_categories:
+            for weapon in category.weapons:
+                if weapon != first_pistol:
+                    weapon.locked = True
+        self.current_weapon = first_pistol
+
+    def find_first_category_with_unlocked_weapon(self):
+        for i, category in enumerate(self.weapon_categories):
+            if category.has_unlocked_weapon():
+                return i
+        return 0
+
+    def get_current_weapon(self):
+        category = self.weapon_categories[self.current_category_index]
+        return category.current_weapon()
+
+    def switch_weapon_category(self, index):
+        if 0 <= index < len(self.weapon_categories):
+            self.current_category_index = index
+            new_weapon = self.weapon_categories[
+                self.current_category_index].current_weapon()
+            if new_weapon is not None:
+                self.current_weapon = new_weapon
+
+    def cycle_weapon(self, direction):
+        current_category = self.weapon_categories[self.current_category_index]
+        if direction > 0:
+            current_category.next_weapon()
+        else:
+            current_category.previous_weapon()
+        new_weapon = current_category.current_weapon()
+        if new_weapon is not None:
+            self.current_weapon = new_weapon
+
+    def update(self, keys, mouse_pos):
+        self.dx, self.dy = 0, 0
+        if keys[pygame.K_w]:
+            self.dy -= self.speed
+        if keys[pygame.K_s]:
+            self.dy += self.speed
+        if keys[pygame.K_a]:
+            self.dx -= self.speed
+        if keys[pygame.K_d]:
+            self.dx += self.speed
+
+        new_x = self.rect.x + self.dx
+        new_y = self.rect.y + self.dy
+
+        if 0 <= new_x < constants['VIRTUAL_WIDTH'] - self.rect.width:
+            self.rect.x = new_x
+        if 0 <= new_y < constants['VIRTUAL_HEIGHT'] - self.rect.height:
+            self.rect.y = new_y
+
+        angle = math.atan2(mouse_pos[1] - self.rect.centery,
+                           mouse_pos[0] - self.rect.centerx)
+        self.rotate(angle)
+
+    def rotate(self, angle):
+        self.image = pygame.transform.rotate(self.original_image, -math.degrees(angle))
+        self.rect = self.image.get_rect(center=self.rect.center)
+        self.mask = pygame.mask.from_surface(self.image)
+
+    def draw_health_bar(self, camera):
+        bar_length = 30
+        bar_height = 6
+        fill = (self.health / constants['PLAYER_HEALTH']) * bar_length
+        outline_rect = pygame.Rect(self.rect.centerx - bar_length / 2, self.rect.y - 20,
+                                   bar_length, bar_height)
+        fill_rect = pygame.Rect(self.rect.centerx - bar_length / 2, self.rect.y - 20,
+                                fill, bar_height)
+
+        camera_outline_rect = camera.apply(pygame.Rect(outline_rect))
+        camera_fill_rect = camera.apply(pygame.Rect(fill_rect))
+
+        pygame.draw.rect(screen, constants['NEON'], camera_fill_rect)
+        pygame.draw.rect(screen, constants['WHITE'], camera_outline_rect, 1)
+
+    def take_damage(self, amount):
+        self.health -= amount
+        self.health = max(self.health, 0)
+
+    def shake(self):
+        self.shake_offset = (
+        random.randint(-self.shake_intensity, self.shake_intensity),
+        random.randint(-self.shake_intensity, self.shake_intensity))
+        self.shake_duration = 1
+
+    def update_shake(self):
+        if self.shake_duration > 0:
+            self.rect.x += self.shake_offset[0]
+            self.rect.y += self.shake_offset[1]
+            self.shake_duration -= 1
+        else:
+            self.shake_offset = (0, 0)
+
+
+class Projectile(pygame.sprite.Sprite):
+    def __init__(self, x, y, angle, speed, penetration, damage, blast_radius=0):
+        super().__init__()
+        self.image = pygame.Surface((3, 3))
+        self.image.fill(constants['YELLOW'])
+        self.rect = self.image.get_rect(center=(x, y))
+        self.speed = speed
+        self.dx = self.speed * math.cos(angle)
+        self.dy = self.speed * math.sin(angle)
+        self.initial_penetration = penetration
+        self.penetration = penetration
+        self.initial_damage = damage
+        self.damage = damage
+        self.zombies_hit = []
+        self.blast_radius = blast_radius
+
+    def update(self):
+        self.rect.x += self.dx
+        self.rect.y += self.dy
+        if not pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'],
+                           constants['VIRTUAL_HEIGHT']).colliderect(self.rect):
+            self.kill()
+        else:
+            for zombie in zombies:
+                distance = math.sqrt((self.rect.centerx - zombie.rect.centerx) ** 2 + (
+                            self.rect.centery - zombie.rect.centery) ** 2)
+                if distance <= self.blast_radius:
+                    current_damage = self.get_current_damage()
+                    zombie.take_damage(current_damage)
+
+                    damage_color = self.get_penetration_color()
+                    damage_text = FloatingText(zombie.rect.centerx, zombie.rect.top,
+                                               int(current_damage), damage_color)
+                    floating_texts.add(damage_text)
+
+                    for _ in range(constants['BLOOD_SPRAY_PARTICLES']):
+                        angle = random.uniform(0, 2 * math.pi)
+                        speed = random.uniform(0.7, 1.5)
+                        blood_particle = BloodParticle(zombie.rect.center, angle, speed)
+                        blood_particles.add(blood_particle)
+
+    def get_penetration_color(self):
+        hit_count = len(self.zombies_hit)
+        color_index = min(hit_count, len(constants['PENETRATION_COLORS']) - 1)
+        return constants['PENETRATION_COLORS'][color_index]
+
+    def reduce_penetration(self, zombie):
+        if zombie not in self.zombies_hit:
+            self.zombies_hit.append(zombie)
+            self.penetration -= 1
+            self.damage *= 0.9
+        if self.penetration <= 0:
+            self.kill()
+
+    def get_current_damage(self):
+        return self.damage
+
+
+class ZombieClass:
+    a = {'HEALTH': 33, 'SPEED': 1.0}
+    b = {'HEALTH': 66, 'SPEED': 1.1}
+    c = {'HEALTH': 99, 'SPEED': 1.2}
+    d = {'HEALTH': 133, 'SPEED': 1.3}
+    e = {'HEALTH': 166, 'SPEED': 1.4}
+    f = {'HEALTH': 199, 'SPEED': 1.5}
+    g = {'HEALTH': 233, 'SPEED': 1.6}
+    h = {'HEALTH': 266, 'SPEED': 1.7}
+    i = {'HEALTH': 299, 'SPEED': 1.8}
+    j = {'HEALTH': 333, 'SPEED': 1.9}
+
+
+class Zombie(pygame.sprite.Sprite):
+    def __init__(self, x, y, player, zombie_image, zombie_class):
+        super().__init__()
+        self.original_image = zombie_image
+        self.image = self.original_image.copy()
+        self.rect = self.image.get_rect(center=(x, y))
+        self.mask = pygame.mask.from_surface(self.image)
+        self.speed = zombie_class['SPEED']
+        self.player = player
+        self.max_health = zombie_class['HEALTH']
+        self.health = self.max_health
+        self.zombie_class_name = self.get_class_name(zombie_class)
+        self.fading = False
+        self.fade_start_time = 0
+        self.last_damage_time = 0
+        self.roaming = True
+        self.roaming_target = self.get_new_roaming_target()
+        self.detect_radius = 12.5
+        self.killed = False
+        hitbox_size = int(self.rect.width * 0.5)
+        self.hitbox = pygame.Rect(0, 0, hitbox_size, hitbox_size)
+        self.hitbox.center = self.rect.center
+        self.grid_size = (
+        constants['VIRTUAL_WIDTH'] // 16, constants['VIRTUAL_HEIGHT'] // 16)
+        self.path = []
+        self.path_update_interval = 250
+        self.path_update_offset = random.randint(0, self.path_update_interval)
+        self.last_path_update = pygame.time.get_ticks() - self.path_update_offset
+
+    def get_class_name(self, zombie_class):
+        for name, cls in vars(ZombieClass).items():
+            if isinstance(cls, dict) and cls == zombie_class:
+                return name
+        return 'a'
+
+    def get_new_roaming_target(self):
+        return random.randint(0, constants['VIRTUAL_WIDTH']), random.randint(0,
+                                                                             constants[
+                                                                                 'VIRTUAL_HEIGHT'])
+
+    def update(self):
+        self.last_damage_time = pygame.time.get_ticks()
+        self.flash()
+        if self.fading:
+            self.fade_out()
+        elif not self.fading:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.last_path_update > self.path_update_interval:
+                self.update_path()
+                self.last_path_update = current_time
+
+            if self.path:
+                next_pos = self.path[0]
+                direction = pygame.math.Vector2(next_pos[0] * 32 - self.rect.centerx,
+                                                next_pos[1] * 32 - self.rect.centery)
+                if direction.length() > 0:
+                    direction = direction.normalize() * self.speed
+                    self.rect.x += direction.x
+                    self.rect.y += direction.y
+                tolerance = 2
+                if abs(self.rect.centerx - next_pos[0] * 32) < self.speed and abs(
+                        self.rect.centery - next_pos[1] * 32) < self.speed:
+                    self.path.pop(0)
+
+        self.avoid_other_zombies()
+        self.check_boundaries()
+        self.rotate_to_target()
+        self.hitbox.center = self.rect.center
+
+    def update_path(self):
+        start = (self.rect.centerx // 32, self.rect.centery // 32)
+        goal = (self.player.rect.centerx // 32, self.player.rect.centery // 32)
+        self.path = self.a_star(start, goal)
+
+    def get_neighbors(self, pos):
+        x, y = pos
+        neighbors = [
+            (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1),
+            (x + 1, y + 1), (x - 1, y - 1), (x + 1, y - 1), (x - 1, y + 1)
+        ]
+        return [(nx, ny) for nx, ny in neighbors if
+                0 <= nx < self.grid_size[0] and 0 <= ny < self.grid_size[1]]
+
+    def manhattan_distance(self, a, b):
+        return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+
+    def a_star(self, start, goal):
+        frontier = []
+        heapq.heappush(frontier, (0, start))
+        came_from = {}
+        cost_so_far = defaultdict(lambda: float('inf'))
+        came_from[start] = None
+        cost_so_far[start] = 0
+
+        while frontier:
+            current = heapq.heappop(frontier)[1]
+
+            if current == goal:
+                break
+
+            for next in self.get_neighbors(current):
+                new_cost = cost_so_far[current] + (1 if (next[0] - current[0]) * (
+                            next[1] - current[1]) == 0 else 1.414)
+                if new_cost < cost_so_far[next]:
+                    cost_so_far[next] = new_cost
+                    priority = new_cost + self.manhattan_distance(goal, next)
+                    heapq.heappush(frontier, (priority, next))
+                    came_from[next] = current
+
+        path = []
+        current = goal
+        while current != start:
+            path.append(current)
+            current = came_from.get(current)
+            if current is None:
+                break
+        path.reverse()
+        return path
+
+    def avoid_other_zombies(self):
+        avoidance_force = pygame.math.Vector2(0, 0)
+        for other_zombie in zombies:
+            if other_zombie != self:
+                distance = pygame.math.Vector2(self.rect.center) - pygame.math.Vector2(
+                    other_zombie.rect.center)
+                if 0 < distance.length() < constants['ZOMBIE_AVOIDANCE_RADIUS']:
+                    avoidance_force += distance.normalize()
+
+        if avoidance_force.length() > 0:
+            avoidance_force = avoidance_force.normalize() * self.speed * 0.6
+            self.rect.x += avoidance_force.x
+            self.rect.y += avoidance_force.y
+
+    def check_boundaries(self):
+        self.rect.clamp_ip(
+            pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT']))
+
+    def rotate_to_target(self):
+        if self.path:
+            target = (self.path[0][0] * 32, self.path[0][1] * 32)
+        else:
+            target = (self.player.rect.centerx, self.player.rect.centery)
+
+        dx = target[0] - self.rect.centerx
+        dy = target[1] - self.rect.centery
+        if dx != 0 or dy != 0:
+            angle = math.degrees(math.atan2(-dy, dx))
+            self.image = pygame.transform.rotate(self.original_image, angle)
+            self.rect = self.image.get_rect(center=self.rect.center)
+
+    def draw_health_bar(self, camera):
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_damage_time < constants[
+            'HEALTH_BAR_VISIBLE_DURATION']:
+            bar_length = 30
+            bar_height = 6
+            fill = (self.health / self.max_health) * bar_length
+            outline_rect = pygame.Rect(self.rect.centerx - bar_length / 2,
+                                       self.rect.y - 10, bar_length, bar_height)
+            fill_rect = pygame.Rect(self.rect.centerx - bar_length / 2,
+                                    self.rect.y - 10, fill, bar_height)
+            pygame.draw.rect(screen, constants['NEON'], camera.apply(fill_rect))
+            pygame.draw.rect(screen, constants['WHITE'], camera.apply(outline_rect), 1)
+
+    def take_damage(self, amount):
+        if not self.killed:
+            self.health -= amount
+            self.last_damage_time = pygame.time.get_ticks()
+            self.flash()
+
+            damage_text = FloatingText(self.rect.centerx, self.rect.top, int(amount),
+                                       constants['GAMMA'])
+            floating_texts.add(damage_text)
+
+            if self.health <= 0:
+                self.killed = True
+                self.start_fading()
+
+    def start_fading(self):
+        if not self.fading:
+            self.fading = True
+            self.fade_start_time = pygame.time.get_ticks()
+            constants['SCORE'] += self.get_score_value()
+            bloodline_xp_gained = self.blood()
+            # Remove this line: constants['BLOOD'] += bloodline_xp_gained
+            constants['TOTAL_KILLS'] += 1
+            print(f"Zombie killed. Total kills: {constants['TOTAL_KILLS']}")
+            energy_orb = EnergyOrb(self.rect.centerx, self.rect.centery)
+            energy_orbs.add(energy_orb)
+            total_xp_gained = self.get_score_value() + bloodline_xp_gained
+            update_player_level_and_xp(total_xp_gained)
+
+    def flash(self):
+        flash_duration = 100
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_damage_time < flash_duration:
+            self.image.fill((255, 0, 0), special_flags=pygame.BLEND_MULT)
+        else:
+            self.image = self.original_image.copy()
+
+    def fade_out(self):
+        fade_duration = 500
+        elapsed_time = pygame.time.get_ticks() - self.fade_start_time
+        if elapsed_time < fade_duration:
+            alpha = 255 - int((elapsed_time / fade_duration) * 255)
+            self.image.set_alpha(alpha)
+        else:
+            self.kill()
+
+    def get_score_value(self):
+        score_table = {
+            'a': 5, 'b': 10, 'c': 15, 'd': 20, 'e': 25, 'f': 30, 'g': 35, 'h': 40,
+            'i': 45, 'j': 50
+        }
+        return score_table.get(self.zombie_class_name, 5)
+
+    def blood(self):
+        bloodline_table = {
+            'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5, 'f': 6, 'g': 7, 'h': 8, 'i': 9,
+            'j': 10
+        }
+        return bloodline_table.get(self.zombie_class_name, 1)
+
+    def flash(self):
+        self.image.fill(constants['WHITE'], special_flags=pygame.BLEND_ADD)
+        self.flash_active = True
+        self.flash_start_time = pygame.time.get_ticks()
+
+    def update_flash(self):
+        if self.flash_active:
+            elapsed_time = pygame.time.get_ticks() - self.flash_start_time
+            if elapsed_time > 50:
+                self.image = self.original_image.copy()
+                self.flash_active = False
+
+    def fade_out(self):
+        current_time = pygame.time.get_ticks()
+        elapsed_time = current_time - self.fade_start_time
+        if elapsed_time < constants['ZOMBIE_FADE_DURATION']:
+            alpha = 255 - (elapsed_time / constants['ZOMBIE_FADE_DURATION']) * 255
+            self.image.set_alpha(alpha)
+        else:
+            self.kill()
+            pygame.mixer.Sound.play(hit_sound)
+
+
+class BloodParticle(pygame.sprite.Sprite):
+    def __init__(self, pos, angle, speed):
+        super().__init__()
+        self.image = pygame.Surface((random.randint(1, 5), random.randint(1, 5)))
+        self.image.fill(constants['RED'])
+        self.rect = self.image.get_rect(center=pos)
+        self.dx = speed * math.cos(angle) * -1
+        self.dy = speed * math.sin(angle) * -1
+        self.gravity = 0.0
+        self.spawn_time = pygame.time.get_ticks()
+        self.lifetime = constants['BLOOD_SPRAY_LIFETIME']
+        self.alpha = 255
+
+    def update(self):
+        self.rect.x += self.dx
+        self.rect.y += self.dy
+        self.dy += self.gravity
+        self.dx *= 0.98
+        self.dy *= 0.98
+
+        elapsed_time = pygame.time.get_ticks() - self.spawn_time
+        if elapsed_time < self.lifetime:
+            self.alpha = int(255 * (1 - elapsed_time / self.lifetime))
+            self.image.set_alpha(self.alpha)
+        else:
+            self.kill()
+
+
+class SmallCircle(pygame.sprite.Sprite):
+    def __init__(self, pos, angle, speed):
+        super().__init__()
+        self.image = pygame.Surface((0.1, 2.0))
+        self.image.fill(constants['RED'])
+        self.rect = self.image.get_rect(center=pos)
+        self.speed = speed
+        self.dx = self.speed * math.cos(angle)
+        self.dy = self.speed * math.sin(angle)
+        self.spawn_time = pygame.time.get_ticks()
+
+    def update(self):
+        self.rect.x += self.dx
+        self.rect.y += self.dy
+        if pygame.time.get_ticks() - self.spawn_time > constants[
+            'SMALL_CIRCLE_LIFETIME']:
+            self.kill()
+
+
+class FloatingText(pygame.sprite.Sprite):
+    def __init__(self, x, y, text, color):
+        super().__init__()
+        self.font = pygame.font.Font('bloody.ttf', 20)
+        self.text = str(text)
+        self.color = color
+        self.outline_color = constants['BLACK']
+        self.outline_width = 0.1
+        self.create_image()
+        self.rect = self.image.get_rect(center=(x, y))
+        self.creation_time = pygame.time.get_ticks()
+        self.duration = 1750
+        self.y_speed = -2
+
+    def create_image(self):
+        outline_surface = self.font.render(self.text, True, self.outline_color)
+        outline_rect = outline_surface.get_rect()
+        self.image = pygame.Surface((outline_rect.width + self.outline_width * 2,
+                                     outline_rect.height + self.outline_width * 2),
+                                    pygame.SRCALPHA)
+        for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1), (-1, 0), (1, 0), (0, -1),
+                       (0, 1)]:
+            self.image.blit(outline_surface,
+                            (self.outline_width + dx, self.outline_width + dy))
+        text_surface = self.font.render(self.text, True, self.color)
+        self.image.blit(text_surface, (self.outline_width, self.outline_width))
+
+    def update(self):
+        self.rect.y += self.y_speed
+
+        if pygame.time.get_ticks() - self.creation_time > self.duration:
+            self.kill()
+
+
+pygame.init()
+
 
 def manhattan_distance(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
@@ -131,60 +768,6 @@ fire_sound_skorpian = pygame.mixer.Sound('skorpian.mp3')
 def create_weapon(name, projectile_speed, fire_rate, damage, spread_angle, ammo, reload_time, penetration, locked, blast_radius=0):
     return Weapon(name, projectile_speed, fire_rate, damage, spread_angle, ammo, reload_time, penetration, locked, blast_radius)
 
-class Weapon:
-    def __init__(self, name, projectile_speed, fire_rate, damage, spread_angle, ammo, reload_time, penetration, locked,  blast_radius=0):
-        self.name = name
-        self.projectile_speed = projectile_speed
-        self.fire_rate = fire_rate
-        self.damage = damage
-        self.spread_angle = spread_angle
-        self.ammo = ammo
-        self.max_ammo = ammo
-        self.reload_time = reload_time
-        self.penetration = penetration
-        self.locked = locked
-        self.blast_radius = blast_radius
-
-class WeaponCategory:
-    def __init__(self, name, weapons):
-        self.name = name
-        self.weapons = weapons
-        self.current_index = self.find_first_unlocked_weapon()
-
-    def find_first_unlocked_weapon(self):
-        for i, weapon in enumerate(self.weapons):
-            if not weapon.locked:
-                return i
-        return None  
-
-    def current_weapon(self):
-        if self.current_index is not None:
-            return self.weapons[self.current_index]
-        return None
-
-    def next_weapon(self):
-        if self.current_index is None:
-            return
-        start_index = self.current_index
-        while True:
-            self.current_index = (self.current_index + 1) % len(self.weapons)
-            if not self.weapons[self.current_index].locked:
-                return
-            if self.current_index == start_index:
-                return
-
-    def previous_weapon(self):
-        if self.current_index is None:
-            return
-        start_index = self.current_index
-        while True:
-            self.current_index = (self.current_index - 1) % len(self.weapons)
-            if not self.weapons[self.current_index].locked:
-                return
-            if self.current_index == start_index:
-                return
-    def has_unlocked_weapon(self):
-        return any(not weapon.locked for weapon in self.weapons)
 #projectile_speed, fire_rate, damage, spread_angle, ammo, reload_time, penetration, locked, blast_radius)
 pistol = WeaponCategory("pistols", [
     Weapon("Glock(PDW)", 55, 200, 24, 0.080, 15, 1900, 1, locked=False),
@@ -221,27 +804,6 @@ launchers = WeaponCategory("Launchers", [
 
 weapon_categories = [pistol, smg, bolt_action, assault_rifles, lmgs, shotguns, launchers]
 
-class Camera:
-    def __init__(self, width, height):
-        self.rect = pygame.Rect(0, 0, width, height)
-        self.width = width
-        self.height = height
-
-    def apply(self, entity):
-        if isinstance(entity, pygame.Rect):
-            return entity.move(self.rect.topleft)
-        return entity.rect.move(self.rect.topleft)
-
-    def update(self, target):
-        x = -target.rect.centerx + int(constants['WIDTH'] / 2)
-        y = -target.rect.centery + int(constants['HEIGHT'] / 2)
-
-        x = min(0, x) 
-        y = min(0, y) 
-        x = max(-(constants['VIRTUAL_WIDTH'] - constants['WIDTH']), x) 
-        y = max(-(constants['VIRTUAL_HEIGHT'] - constants['HEIGHT']), y) 
-
-        self.rect.topleft = (x, y)
 camera = Camera(constants['WIDTH'], constants['HEIGHT'])
 
 def display_damage_text(damage, position, color):
@@ -249,527 +811,12 @@ def display_damage_text(damage, position, color):
     damage_rect = damage_text.get_rect(center=position)
     screen.blit(damage_text, damage_rect)
 
-class MuzzleFlash(pygame.sprite.Sprite):
-    def __init__(self, pos, angle):
-        super().__init__()
-        self.original_image = pygame.Surface((10, 10), pygame.SRCALPHA)
-        
-        base_red = random.randint(220, 255)
-        base_green = random.randint(100, 180)
-        base_blue = random.randint(0, 50)
-        pygame.draw.circle(self.original_image, (base_red, base_green, base_blue, 230), (10, 10), 6)
-        
-        pygame.draw.circle(self.original_image, (base_red, base_green + 20, base_blue, 180), (20, 10), 9)
-        pygame.draw.circle(self.original_image, (min(base_red + 20, 255), min(base_green + 40, 255), min(base_blue + 20, 255), 130), (30, 10), 12)
-        
-        self.image = pygame.transform.rotate(self.original_image, math.degrees(-angle))
-        self.rect = self.image.get_rect(center=pos)
-        self.spawn_time = pygame.time.get_ticks()
-        self.lifetime = random.randint(1, 4)
-
-    def update(self):
-        if pygame.time.get_ticks() - self.spawn_time > self.lifetime:
-            self.kill()
-
-        self.weapon_categories = weapon_categories
-        self.current_category_index = self.find_first_category_with_unlocked_weapon()
-        self.current_weapon = self.get_current_weapon()
-
-    def find_first_category_with_unlocked_weapon(self):
-        for i, category in enumerate(self.weapon_categories):
-            if category.has_unlocked_weapon():
-                return i
-        return 0  
-
-    def get_current_weapon(self):
-        category = self.weapon_categories[self.current_category_index]
-        return category.current_weapon()
-        
-class Player(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        self.original_image = player_image
-        self.image = self.original_image
-        self.rect = self.image.get_rect(center=(x, y))
-        self.mask = player_mask
-        self.speed = constants['PLAYER_SPEED']
-        self.health = constants['PLAYER_HEALTH']
-        self.shake_offset = (1, 1)
-        self.shake_duration = 0.0
-        self.shake_intensity = 0
-        self.weapon_categories = weapon_categories
-        self.current_category_index = 0
-        self.set_initial_weapon()
-
-    def set_initial_weapon(self):
-        first_pistol = self.weapon_categories[0].weapons[0]
-        first_pistol.locked = False
-        for category in self.weapon_categories:
-            for weapon in category.weapons:
-                if weapon != first_pistol:
-                    weapon.locked = True
-        self.current_weapon = first_pistol
-        
-    def find_first_category_with_unlocked_weapon(self):
-        for i, category in enumerate(self.weapon_categories):
-            if category.has_unlocked_weapon():
-                return i
-        return 0 
-
-    def get_current_weapon(self):
-        category = self.weapon_categories[self.current_category_index]
-        return category.current_weapon()
-
-    def switch_weapon_category(self, index):
-        if 0 <= index < len(self.weapon_categories):
-            self.current_category_index = index
-            new_weapon = self.weapon_categories[self.current_category_index].current_weapon()
-            if new_weapon is not None:
-                self.current_weapon = new_weapon
-
-    def cycle_weapon(self, direction):
-        current_category = self.weapon_categories[self.current_category_index]
-        if direction > 0:
-            current_category.next_weapon()
-        else:
-            current_category.previous_weapon()
-        new_weapon = current_category.current_weapon()
-        if new_weapon is not None:
-            self.current_weapon = new_weapon
-        
-    def update(self, keys, mouse_pos):
-        self.dx, self.dy = 0, 0
-        if keys[pygame.K_w]:
-            self.dy -= self.speed
-        if keys[pygame.K_s]:
-            self.dy += self.speed
-        if keys[pygame.K_a]:
-            self.dx -= self.speed
-        if keys[pygame.K_d]:
-            self.dx += self.speed
-
-        new_x = self.rect.x + self.dx
-        new_y = self.rect.y + self.dy
-
-        if 0 <= new_x < constants['VIRTUAL_WIDTH'] - self.rect.width:
-            self.rect.x = new_x
-        if 0 <= new_y < constants['VIRTUAL_HEIGHT'] - self.rect.height:
-            self.rect.y = new_y
-
-        angle = math.atan2(mouse_pos[1] - self.rect.centery, mouse_pos[0] - self.rect.centerx)
-        self.rotate(angle)
-        
-    def rotate(self, angle):
-        self.image = pygame.transform.rotate(self.original_image, -math.degrees(angle))
-        self.rect = self.image.get_rect(center=self.rect.center)
-        self.mask = pygame.mask.from_surface(self.image)
-
-    def draw_health_bar(self, camera):
-        bar_length = 30
-        bar_height = 6
-        fill = (self.health / constants['PLAYER_HEALTH']) * bar_length
-        outline_rect = pygame.Rect(self.rect.centerx - bar_length / 2, self.rect.y - 20, bar_length, bar_height)
-        fill_rect = pygame.Rect(self.rect.centerx - bar_length / 2, self.rect.y - 20, fill, bar_height)
-    
-        camera_outline_rect = camera.apply(pygame.Rect(outline_rect))
-        camera_fill_rect = camera.apply(pygame.Rect(fill_rect))
-    
-        pygame.draw.rect(screen, constants['NEON'], camera_fill_rect)
-        pygame.draw.rect(screen, constants['WHITE'], camera_outline_rect, 1)
-
-    def take_damage(self, amount):
-        self.health -= amount
-        self.health = max(self.health, 0)
-
-    def shake(self):
-        self.shake_offset = (random.randint(-self.shake_intensity, self.shake_intensity),
-                             random.randint(-self.shake_intensity, self.shake_intensity))
-        self.shake_duration = 1
-
-    def update_shake(self):
-        if self.shake_duration > 0:
-            self.rect.x += self.shake_offset[0]
-            self.rect.y += self.shake_offset[1]
-            self.shake_duration -= 1
-        else:
-            self.shake_offset = (0, 0)
-            
 def line_collision(start, end, zombie):
     return zombie.hitbox.clipline(start, end)
     
-class Projectile(pygame.sprite.Sprite):
-    def __init__(self, x, y, angle, speed, penetration, damage, blast_radius=0):
-        super().__init__()
-        self.image = pygame.Surface((3, 3))
-        self.image.fill(constants['YELLOW'])
-        self.rect = self.image.get_rect(center=(x, y))
-        self.speed = speed
-        self.dx = self.speed * math.cos(angle)
-        self.dy = self.speed * math.sin(angle)
-        self.initial_penetration = penetration
-        self.penetration = penetration
-        self.initial_damage = damage
-        self.damage = damage
-        self.zombies_hit = []
-        self.blast_radius = blast_radius
-
-    def update(self):
-        self.rect.x += self.dx
-        self.rect.y += self.dy
-        if not pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT']).colliderect(self.rect):
-            self.kill()
-        else:
-            for zombie in zombies:
-                distance = math.sqrt((self.rect.centerx - zombie.rect.centerx)**2 + (self.rect.centery - zombie.rect.centery)**2)
-                if distance <= self.blast_radius:
-                    current_damage = self.get_current_damage()
-                    zombie.take_damage(current_damage)
-
-                    damage_color = self.get_penetration_color()
-                    damage_text = FloatingText(zombie.rect.centerx, zombie.rect.top, int(current_damage), damage_color)
-                    floating_texts.add(damage_text)
-
-                    for _ in range(constants['BLOOD_SPRAY_PARTICLES']):
-                        angle = random.uniform(0, 2 * math.pi)
-                        speed = random.uniform(0.7, 1.5)
-                        blood_particle = BloodParticle(zombie.rect.center, angle, speed)
-                        blood_particles.add(blood_particle)
-
-    def get_penetration_color(self):
-        hit_count = len(self.zombies_hit)
-        color_index = min(hit_count, len(constants['PENETRATION_COLORS']) - 1)
-        return constants['PENETRATION_COLORS'][color_index]
-
-    def reduce_penetration(self, zombie):
-        if zombie not in self.zombies_hit:
-            self.zombies_hit.append(zombie)
-            self.penetration -= 1
-            self.damage *= 0.9 
-        if self.penetration <= 0:
-            self.kill()
-
-    def get_current_damage(self):
-        return self.damage
-    
-class ZombieClass:
-    a = {'HEALTH': 33, 'SPEED': 1.0}
-    b = {'HEALTH': 66, 'SPEED': 1.1}
-    c = {'HEALTH': 99, 'SPEED': 1.2}
-    d = {'HEALTH': 133, 'SPEED': 1.3}
-    e = {'HEALTH': 166, 'SPEED': 1.4}
-    f = {'HEALTH': 199, 'SPEED': 1.5}
-    g = {'HEALTH': 233, 'SPEED': 1.6}
-    h = {'HEALTH': 266, 'SPEED': 1.7}
-    i = {'HEALTH': 299, 'SPEED': 1.8}
-    j = {'HEALTH': 333, 'SPEED': 1.9}
-
-class Zombie(pygame.sprite.Sprite):
-    def __init__(self, x, y, player, zombie_image, zombie_class):
-        super().__init__()
-        self.original_image = zombie_image
-        self.image = self.original_image.copy()
-        self.rect = self.image.get_rect(center=(x, y))
-        self.mask = pygame.mask.from_surface(self.image)
-        self.speed = zombie_class['SPEED']
-        self.player = player
-        self.max_health = zombie_class['HEALTH']
-        self.health = self.max_health
-        self.zombie_class_name = self.get_class_name(zombie_class)
-        self.fading = False
-        self.fade_start_time = 0
-        self.last_damage_time = 0
-        self.roaming = True
-        self.roaming_target = self.get_new_roaming_target()
-        self.detect_radius = 12.5
-        self.killed = False
-        hitbox_size = int(self.rect.width * 0.5)
-        self.hitbox = pygame.Rect(0, 0, hitbox_size, hitbox_size)
-        self.hitbox.center = self.rect.center
-        self.grid_size = (constants['VIRTUAL_WIDTH'] // 16, constants['VIRTUAL_HEIGHT'] // 16)
-        self.path = []
-        self.path_update_interval = 250
-        self.path_update_offset = random.randint(0, self.path_update_interval)
-        self.last_path_update = pygame.time.get_ticks() - self.path_update_offset
-    
-    def get_class_name(self, zombie_class):
-        for name, cls in vars(ZombieClass).items():
-            if isinstance(cls, dict) and cls == zombie_class:
-                return name
-        return 'a'
-    
-    def get_new_roaming_target(self):
-        return random.randint(0, constants['VIRTUAL_WIDTH']), random.randint(0, constants['VIRTUAL_HEIGHT'])
-    
-    def update(self):
-        self.last_damage_time = pygame.time.get_ticks()
-        self.flash()
-        if self.fading:
-            self.fade_out()
-        elif not self.fading:
-            current_time = pygame.time.get_ticks()
-            if current_time - self.last_path_update > self.path_update_interval:
-                self.update_path()
-                self.last_path_update = current_time
-
-            if self.path:
-                next_pos = self.path[0]
-                direction = pygame.math.Vector2(next_pos[0] * 32 - self.rect.centerx, next_pos[1] * 32 - self.rect.centery)
-                if direction.length() > 0:
-                    direction = direction.normalize() * self.speed
-                    self.rect.x += direction.x
-                    self.rect.y += direction.y
-                tolerance = 2
-                if abs(self.rect.centerx - next_pos[0] * 32) < self.speed and abs(self.rect.centery - next_pos[1] * 32) < self.speed:
-                    self.path.pop(0)
-
-        self.avoid_other_zombies()
-        self.check_boundaries()
-        self.rotate_to_target()
-        self.hitbox.center = self.rect.center
-
-    def update_path(self):
-        start = (self.rect.centerx // 32, self.rect.centery // 32)
-        goal = (self.player.rect.centerx // 32, self.player.rect.centery // 32)
-        self.path = self.a_star(start, goal)
-
-    def get_neighbors(self, pos):
-        x, y = pos
-        neighbors = [
-            (x+1, y), (x-1, y), (x, y+1), (x, y-1),  
-            (x+1, y+1), (x-1, y-1), (x+1, y-1), (x-1, y+1) 
-        ]
-        return [(nx, ny) for nx, ny in neighbors if 0 <= nx < self.grid_size[0] and 0 <= ny < self.grid_size[1]]
-
-    def manhattan_distance(self, a, b):
-        return max(abs(a[0] - b[0]), abs(a[1] - b[1]))  
-
-    def a_star(self, start, goal):
-        frontier = []
-        heapq.heappush(frontier, (0, start))
-        came_from = {}
-        cost_so_far = defaultdict(lambda: float('inf'))
-        came_from[start] = None
-        cost_so_far[start] = 0
-
-        while frontier:
-            current = heapq.heappop(frontier)[1]
-
-            if current == goal:
-                break
-
-            for next in self.get_neighbors(current):
-                new_cost = cost_so_far[current] + (1 if (next[0] - current[0]) * (next[1] - current[1]) == 0 else 1.414)
-                if new_cost < cost_so_far[next]:
-                    cost_so_far[next] = new_cost
-                    priority = new_cost + self.manhattan_distance(goal, next)
-                    heapq.heappush(frontier, (priority, next))
-                    came_from[next] = current
-
-        path = []
-        current = goal
-        while current != start:
-            path.append(current)
-            current = came_from.get(current)
-            if current is None:
-                break  
-        path.reverse()
-        return path
-
-    def avoid_other_zombies(self):
-        avoidance_force = pygame.math.Vector2(0, 0)
-        for other_zombie in zombies:
-            if other_zombie != self:
-                distance = pygame.math.Vector2(self.rect.center) - pygame.math.Vector2(other_zombie.rect.center)
-                if 0 < distance.length() < constants['ZOMBIE_AVOIDANCE_RADIUS']:
-                    avoidance_force += distance.normalize()
-        
-        if avoidance_force.length() > 0:
-            avoidance_force = avoidance_force.normalize() * self.speed * 0.6
-            self.rect.x += avoidance_force.x
-            self.rect.y += avoidance_force.y
-
-    def check_boundaries(self):
-        self.rect.clamp_ip(pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT']))
-
-    def rotate_to_target(self):
-        if self.path:
-            target = (self.path[0][0] * 32, self.path[0][1] * 32)
-        else:
-            target = (self.player.rect.centerx, self.player.rect.centery)
-        
-        dx = target[0] - self.rect.centerx
-        dy = target[1] - self.rect.centery
-        if dx != 0 or dy != 0:
-            angle = math.degrees(math.atan2(-dy, dx))
-            self.image = pygame.transform.rotate(self.original_image, angle)
-            self.rect = self.image.get_rect(center=self.rect.center)
-
-    def draw_health_bar(self, camera):
-        current_time = pygame.time.get_ticks()
-        if current_time - self.last_damage_time < constants['HEALTH_BAR_VISIBLE_DURATION']:
-            bar_length = 30
-            bar_height = 6
-            fill = (self.health / self.max_health) * bar_length
-            outline_rect = pygame.Rect(self.rect.centerx - bar_length / 2, self.rect.y - 10, bar_length, bar_height)
-            fill_rect = pygame.Rect(self.rect.centerx - bar_length / 2, self.rect.y - 10, fill, bar_height)
-            pygame.draw.rect(screen, constants['NEON'], camera.apply(fill_rect))
-            pygame.draw.rect(screen, constants['WHITE'], camera.apply(outline_rect), 1)
-
-    def take_damage(self, amount):
-        if not self.killed:
-            self.health -= amount
-            self.last_damage_time = pygame.time.get_ticks()
-            self.flash()
-            
-            damage_text = FloatingText(self.rect.centerx, self.rect.top, int(amount), constants['GAMMA'])
-            floating_texts.add(damage_text)
-            
-            if self.health <= 0:
-                self.killed = True
-                self.start_fading()
-
-    def start_fading(self):
-        if not self.fading:
-            self.fading = True
-            self.fade_start_time = pygame.time.get_ticks()
-            constants['SCORE'] += self.get_score_value()
-            bloodline_xp_gained = self.blood()
-        # Remove this line: constants['BLOOD'] += bloodline_xp_gained
-            constants['TOTAL_KILLS'] += 1
-            print(f"Zombie killed. Total kills: {constants['TOTAL_KILLS']}")
-            energy_orb = EnergyOrb(self.rect.centerx, self.rect.centery)
-            energy_orbs.add(energy_orb)
-            total_xp_gained = self.get_score_value() + bloodline_xp_gained
-            update_player_level_and_xp(total_xp_gained)
-
-    def flash(self):
-        flash_duration = 100
-        current_time = pygame.time.get_ticks()
-        if current_time - self.last_damage_time < flash_duration:
-            self.image.fill((255, 0, 0), special_flags=pygame.BLEND_MULT)
-        else:
-            self.image = self.original_image.copy()
-
-    def fade_out(self):
-        fade_duration = 500
-        elapsed_time = pygame.time.get_ticks() - self.fade_start_time
-        if elapsed_time < fade_duration:
-            alpha = 255 - int((elapsed_time / fade_duration) * 255)
-            self.image.set_alpha(alpha)
-        else:
-            self.kill()
-
-    def get_score_value(self):
-        score_table = {
-            'a': 5, 'b': 10, 'c': 15, 'd': 20, 'e': 25, 'f': 30, 'g': 35, 'h': 40, 'i': 45, 'j': 50
-        }
-        return score_table.get(self.zombie_class_name, 5)
-
-    def blood(self):
-        bloodline_table = {
-            'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5, 'f': 6, 'g': 7, 'h': 8, 'i': 9, 'j': 10
-        }
-        return bloodline_table.get(self.zombie_class_name, 1)
-
-    def flash(self):
-        self.image.fill(constants['WHITE'], special_flags=pygame.BLEND_ADD)
-        self.flash_active = True
-        self.flash_start_time = pygame.time.get_ticks()
-
-    def update_flash(self):
-        if self.flash_active:
-            elapsed_time = pygame.time.get_ticks() - self.flash_start_time
-            if elapsed_time > 50:
-                self.image = self.original_image.copy()
-                self.flash_active = False
-
-    def fade_out(self):
-        current_time = pygame.time.get_ticks()
-        elapsed_time = current_time - self.fade_start_time
-        if elapsed_time < constants['ZOMBIE_FADE_DURATION']:
-            alpha = 255 - (elapsed_time / constants['ZOMBIE_FADE_DURATION']) * 255
-            self.image.set_alpha(alpha)
-        else:
-            self.kill()
-            pygame.mixer.Sound.play(hit_sound)
-
-class BloodParticle(pygame.sprite.Sprite):
-    def __init__(self, pos, angle, speed):
-        super().__init__()
-        self.image = pygame.Surface((random.randint(1, 5), random.randint(1, 5)))
-        self.image.fill(constants['RED'])
-        self.rect = self.image.get_rect(center=pos)
-        self.dx = speed * math.cos(angle) * -1
-        self.dy = speed * math.sin(angle) * -1
-        self.gravity = 0.0
-        self.spawn_time = pygame.time.get_ticks()
-        self.lifetime = constants['BLOOD_SPRAY_LIFETIME']
-        self.alpha = 255
-
-    def update(self):
-        self.rect.x += self.dx
-        self.rect.y += self.dy
-        self.dy += self.gravity
-        self.dx *= 0.98
-        self.dy *= 0.98
-        
-        elapsed_time = pygame.time.get_ticks() - self.spawn_time
-        if elapsed_time < self.lifetime:
-            self.alpha = int(255 * (1 - elapsed_time / self.lifetime))
-            self.image.set_alpha(self.alpha)
-        else:
-            self.kill()
-
-class SmallCircle(pygame.sprite.Sprite):
-    def __init__(self, pos, angle, speed):
-        super().__init__()
-        self.image = pygame.Surface((0.1, 2.0))
-        self.image.fill(constants['RED'])
-        self.rect = self.image.get_rect(center=pos)
-        self.speed = speed
-        self.dx = self.speed * math.cos(angle)
-        self.dy = self.speed * math.sin(angle)
-        self.spawn_time = pygame.time.get_ticks()
-
-    def update(self):
-        self.rect.x += self.dx
-        self.rect.y += self.dy
-        if pygame.time.get_ticks() - self.spawn_time > constants['SMALL_CIRCLE_LIFETIME']:
-            self.kill()
-
 def render_text(text, font, color, x, y):
     text_surface = font.render(text, True, color)
     screen.blit(text_surface, (x, y))
-
-class FloatingText(pygame.sprite.Sprite):
-    def __init__(self, x, y, text, color):
-        super().__init__()
-        self.font = pygame.font.Font('bloody.ttf', 20)
-        self.text = str(text)
-        self.color = color
-        self.outline_color = constants['BLACK']
-        self.outline_width = 0.1
-        self.create_image()
-        self.rect = self.image.get_rect(center=(x, y))
-        self.creation_time = pygame.time.get_ticks()
-        self.duration = 1750
-        self.y_speed = -2
-
-    def create_image(self):
-        outline_surface = self.font.render(self.text, True, self.outline_color)
-        outline_rect = outline_surface.get_rect()
-        self.image = pygame.Surface((outline_rect.width + self.outline_width * 2, 
-                                     outline_rect.height + self.outline_width * 2), pygame.SRCALPHA)
-        for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1), (-1, 0), (1, 0), (0, -1), (0, 1)]:
-            self.image.blit(outline_surface, (self.outline_width + dx, self.outline_width + dy))
-        text_surface = self.font.render(self.text, True, self.color)
-        self.image.blit(text_surface, (self.outline_width, self.outline_width))
-
-    def update(self):
-        self.rect.y += self.y_speed
-        
-        if pygame.time.get_ticks() - self.creation_time > self.duration:
-            self.kill()
 
 blood_particles = pygame.sprite.Group()
 small_circles = pygame.sprite.Group()
