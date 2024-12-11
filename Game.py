@@ -6,8 +6,6 @@ from pygame.math import Vector2
 import heapq
 from collections import defaultdict
 
-pygame.init()
-
 level_thresholds = {
     1: 0,
     2: 1000,
@@ -49,8 +47,8 @@ constants = {
     'TOTAL_KILLS': 0,
     'ZOMBIE_AVOIDANCE_RADIUS': 5,
     'WAVE_DELAY': 10000,
-    'VIRTUAL_WIDTH': 2020,  
-    'VIRTUAL_HEIGHT': 1180,  
+    'VIRTUAL_WIDTH': 2020,
+    'VIRTUAL_HEIGHT': 1180,
 }
 
 constants.update({
@@ -61,6 +59,9 @@ constants.update({
          (0, 255, 0),
     ]
 })
+
+
+pygame.init()
 
 class EnergyOrb(pygame.sprite.Sprite):
     def __init__(self, x, y):
