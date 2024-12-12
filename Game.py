@@ -780,7 +780,7 @@ clock = pygame.time.Clock()
 
 player_image = pygame.image.load('player.png').convert_alpha()
 player_mask = pygame.mask.from_surface(player_image)
-zombie_images = [pygame.image.load(f'zombie{i}.png').convert_alpha() for i in range(1, 13)]
+zombie_images = [pygame.image.load(f'zombie{i}.png').convert_alpha() for i in range(1, 10)]
 background_image = pygame.image.load("zombies.png").convert()
 chest_image = pygame.image.load('chest.png').convert_alpha()
 orb_image = pygame.image.load('orb.png').convert_alpha()
