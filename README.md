@@ -46,6 +46,9 @@ If you have a general suggestion or need some help you can check our discussions
 
 - Global Unlocks - There should be global unlocks, These unlocks are applied across multiple characters and will persist after a game has finished. Currently assigned to: [Condasoft]
 
+Support my work here > https://www.patreon.com/c/CondaScripts
+
+
 - Leaderboard - There should be a leaderboard so the player can keep track of their previous runs and give them something to work towards in their future runs. Currently assigned to: [Condasoft]
 
 - Animations - There are very basic animations right now in the future the game should be fully animated to improve the overall experience. Currently assigned to: [Condasoft]
